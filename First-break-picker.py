@@ -2,7 +2,7 @@
 """
 Written by Antoine Paré in April 2017
 
-This code takes a 3DVSP stacked dataset and automatically pick the first break time
+This code takes a 3DVSP stacked dataset and automatically pick the first break time to the onset
 
 """
 import timeit
@@ -16,8 +16,10 @@ from obspy.io.segy.segy import _read_segy
 
 def FBTime(inputfile):
     
-    # Read the input SEG-Y files, 3D-VSP stacked file, sorted in SP, MD, Trace Number (output of stack)
-    # Save it at a stream object, the seismic format from the Obspy library
+    """ Read the input SEG-Y files, 3D-VSP stacked file, sorted in SP, MD, Trace Number (output of stack)
+    save it to a stream object, the seismic format from the Obspy library.
+    Then create a total vector trace with X,Y and Z and pick the onset.
+    Save all first breaks to a text file."""
     
     tic = timeit.default_timer()
     print('The SEG-Y files is loading ... Please be patient')
@@ -116,19 +118,6 @@ def FBTime(inputfile):
     
     # Save the first arrival time to a text file to import it later on
     np.savetxt('FirstBreakTime.txt', first_arrival_time, fmt='%.2f')
-
-
-
-    #Write first arrival time to headers of input SEG-Y file
-
-#    for t in range(nbr_of_traces):
-#        stream.traces[t].header.water_depth_at_group = int(first_arrival_time[t]*100)
-#   
-#                                                   
-#    #output SEG-Y with the first break time in headers
-#    print('Saving SEG-Y files...')
-#    stream.write('FirstBreakPicked.segy', data_encoding=1, endian='>')
- 
 
 def main(infile):
     FBTime(infile)                                                    
