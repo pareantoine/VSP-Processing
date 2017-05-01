@@ -1,5 +1,5 @@
 """
-Written by Antoine ParĂŠ in April 2017
+Written by Antoine Paré in April 2017
 
 This code takes a 3DVSP after first break picking and perform a statistical horizontal rotation
 
