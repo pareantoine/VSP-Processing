@@ -53,8 +53,9 @@ def savetracetostream(stream, idx, out, data):
     if not hasattr(trace.stats, 'segy.trace_header'): 
                 trace.stats.segy = {}        
     trace.stats.segy.trace_header = SEGYTraceHeader() 
-    trace.stats.segy.trace_header = stream.traces[idx].header 
+    trace.stats.segy.trace_header = stream.traces[idx].header
     out.append(trace) 
+
 
     
 
@@ -125,16 +126,16 @@ print('The calculation took {0:.0f} seconds'.format(toc-tic))
 table_angle = np.column_stack((geophone_depths, azimuth, horizontal_angles, tool_face))
 df = pd.DataFrame(table_angle, columns=['MD', 'shot azimuth', 'rotation angle', 'tool face'])
 
-""" Calculate the average measured tool face for each tool and use it to determine the angle to rotate 
-    each source - receiver pair (angle_to_rotate) """
-#need to add a better measurement of the angle to rotate, not using .mean() but using numpy.histogram
-angle_to_rotate = azimuth - np.tile(df.groupby('MD')['tool face'].mean().values, nbr_of_SP)
-
+""" Count the number of tool face angle every 2 deg and output the angle with the highest number in its bin: averaged_tool_face.
+    Then uses it to determine the angle to rotate each source - receiver pair (angle_to_rotate) """
+averaged_tool_face = df.groupby('MD')['tool face'].agg(lambda x: np.histogram(x, bins=180,range=(0,360))[0].argmax()).values * 2
+angle_to_rotate = azimuth - np.tile(averaged_tool_face, nbr_of_SP)
 
 """ Set up an empty stream which will hold the rotated traces to be saved as a SEGY """
 out = Stream()
 
 """ Rotate all the traces in stream using the horizontal rotation angle and save them in the output stream: out """
+tic = timeit.default_timer()
 for i,j in zip(range(nbr_of_SP*nbr_of_geophone),angle_to_rotate):
     xcomp = stream.traces[i*3].data
     ycomp = stream.traces[i*3+1].data
@@ -148,12 +149,30 @@ for i,j in zip(range(nbr_of_SP*nbr_of_geophone),angle_to_rotate):
     if i%2000==0:
         print('Rotation of the input file in progress: {0:.1f}%'.format(i/(nbr_of_SP*nbr_of_geophone)*100))
 
+toc = timeit.default_timer()
+print('The rotation took {0:.0f} seconds'.format(toc-tic))
+
+
 """ set up the necessary textual and binary file header for the output stream: out """
 out.stats = AttribDict()
 #out.stats = Stats(dict(textual_file_header=stream.textual_file_header))
 out.stats.textual_file_header = stream.textual_file_header
 out.stats.binary_file_header = stream.binary_file_header
-out.stats.binary_file_header.trace_sorting_code = stream.binary_file_header.trace_sorting_code  
+out.stats.binary_file_header.trace_sorting_code = stream.binary_file_header.trace_sorting_code
+
+""" save the rotation headers to the output stream: out """
+for i,j,m in zip(range(nbr_of_SP*nbr_of_geophone), angle_to_rotate, tool_face):
+    out.traces[i*3].stats.segy.trace_header.source_type_orientation = int(j)
+    out.traces[i*3+1].stats.segy.trace_header.source_type_orientation = int(j)
+    out.traces[i*3+2].stats.segy.trace_header.source_type_orientation = int(j)
+    out.traces[i*3].stats.segy.trace_header.source_energy_direction_mantissa = int(m)
+    out.traces[i*3+1].stats.segy.trace_header.source_energy_direction_mantissa = int(m)
+    out.traces[i*3+2].stats.segy.trace_header.source_energy_direction_mantissa = int(m) 
+
+""" QC of input/output """
+print('The input SEG-Y had {} traces'.format(str(stream).split()[0]))
+print('After applying the rotation module...')
+print('The output SEG-Y has {} traces'.format(out.count()))
 
 """ save 'out' as a SEG-Y file """
 print('Saving SEG-Y files...')
