@@ -93,7 +93,7 @@ nbr_of_traces = nbr_of_geophone * nbr_of_SP * nbr_of_components
 if nbr_of_traces == int(str(stream).split()[0]):
     print('All Shot Points, Components and Geophones accounted for.')
 else:
-    print('Some traces are missing, please stop program and check SEG-Y file header')
+    sys.exit('Some traces are missing, program stopped')
 
     
 """ set up empty arrays for the output horizontal angle of rotation and the tool face """
