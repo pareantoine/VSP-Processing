@@ -1,15 +1,12 @@
 """
-Written by Antoine Paré in April 2017
-
+Written by Antoine Pare in April 2017
 This code takes a 3DVSP and sorts it in function of headers
-
 """
 import sys
 import timeit
 import numpy as np
-import math
-import statsmodels.api as sm
 import pandas as pd
+import tkinter as tk
 
 from obspy import read, Trace, Stream, UTCDateTime
 from obspy.core import AttribDict, Stats
@@ -30,49 +27,10 @@ def savetracetostream(stream, idx, out, data):
     trace.stats.segy.trace_header = stream.traces[idx].header
     out.append(trace) 
 
-def choose_header_to_sort():
-    """
-    this function displays a list of headers available for sorting and asks
-    the user to choose which header to sort on and wether to perform an
-    ascending or descending sort (should be a bolean)
-    """
     
-    headers_list = np.array([word.split(':')[0] for word in str(stream.traces[0].header).split('\n')])[:-1]
-    
-    headers_choosen = np.array([])
-    ascending_order = np.array([])
-    
-    stop = 0
-    i = 1 
-    while stop < 1:
-        """ ask user the number of the header he would like to choose """
-        print('With which header would you like to do the sort number {}'.format(i))
-        m = 0
-        for headers in headers_list[0:10]:
-            print(m + ': ' + headers + '/n')
-            m+=1
-        choice = input('With which header would you like to do the sort number {}, n for next 10, q to exit'.format(i))
-        if choice == 'q':
-            stop = 1
-        elif choice == 'n':
-         """ need to fill in the options with the next 10 headers or other alternative """   
-        else:
-            headers_choosen = np.append(headers_choosen, choice)
-            
-            order_pick = input('1: Ascending, 2:Descending')
-            if order_pick == 1:
-                order = True
-            else:
-                order = False
-            ascending_order = np.append(ascending_order, order)
-            
-            i = i+1
-    
-    return headers_choosen, ascending_order
- 
-    
+""" read input file """
 
-inputfile = 'KOC_FB.sgy'
+inputfile = 'test.sgy'
 
 print('The SEG-Y files is loading ... Please be patient')
 tic = timeit.default_timer()
@@ -93,40 +51,88 @@ nbr_of_traces = nbr_of_geophone * nbr_of_SP * nbr_of_components
 if nbr_of_traces == int(str(stream).split()[0]):
     print('All Shot Points, Components and Geophones accounted for.')
 else:
-    print('Some traces are missing, please stop program and check SEG-Y file header')
+    sys.exit('Some traces are missing, program stopped')
 
-        
+
+""" Choose the headers to sort on with a pop-up window which shows a drop down menu of all headers"""
+
+headers_list = np.array([word.split(':')[0] for word in str(stream.traces[0].header).split('\n')])[:-1]
+headers_choosen = []
+ascending_order = []
+
+def select():
+    if var_bool.get() == 'Ascending':
+        ascending_order.append(True)
+    else:
+        ascending_order.append(False)
     
-"""
-to sort a SEG-Y data, I will need to save all headers requeted for the sort in
-a pandas dataframe with columns in the order of the header sort. The trace index being
-the index of the dataframe which can be outputed at the end.
-Then use pandas to sort the columns as requested, output the trace index column.
-Create the out stream by reading the input file trace by trace as specified in the 
-dataframe.
+    headers_choosen.append(var.get())
 
-This create a list of all the headers:
-headers_list = np.array([word.split(':')[0] for word in str(stream.traces[0].header).split('\n')])
+def finish():
+    root.destroy()
 
-example of sorting a dataframe: 
-df_sorted = df.sort_values(by=['geophone_depths','SP','components'], ascending=[True,False,True])
-getting the index:
-df_sorted.index[i]
+root = tk.Tk()
 
-""" 
+# use width x height + x_offset + y_offset (no spaces!)
+root.geometry("%dx%d+%d+%d" % (1000, 80, 100, 100))
 
+root.title("tk.Optionmenu as combobox")
+
+var = tk.StringVar(root)
+# initial value
+var.set('trace_sequence_number_within_line')
+choices = headers_list
+
+var_bool = tk.StringVar(root)
+# initial value
+var_bool.set('Ascending')
+choices_bool = ['Ascending', 'Descending']
+
+option = tk.OptionMenu(root, var, *choices)
+option.pack(side='left', padx=10, pady=10)
+
+option = tk.OptionMenu(root, var_bool, *choices_bool)
+option.pack(side='left', padx=10, pady=10)
+
+button = tk.Button(root, text="Select this header to sort on", command=select)
+button.pack(side='left', padx=10, pady=10)
+
+button = tk.Button(root, text="Sort", command=finish)
+button.pack(side='left', padx=10, pady=10)
+    
+root.mainloop()
+
+
+""" read in the headers and store them in a dataframe: df """
+
+df = pd.DataFrame()
+
+for headers in headers_choosen:   
+    df[headers] = [getattr(t.header, headers) for t in stream.traces]
+
+""" sort the dataframe accordingly """
+
+df_sorted = df.sort_values(by=headers_choosen, ascending=ascending_order)
 
 
 """ create a sorted out stream """
 out = Stream()
 
+
+print('Sorting the input file in progress')
+      
+""" save in the out stream the traces of input file in the sorted order """
 tic = timeit.default_timer()
 
+nbr_of_traces_to_sort = df_sorted.index.size
+i = 0
+
 for index in df_sorted.index:
+    i += 1
     savetracetostream(stream, index, out, stream.traces[index].data)
     
-    if index%2000==0:
-        print('Rotation of the input file in progress: {0:.1f}%'.format(i/df_sorted.index.size*100))
+    if i%2000==0:
+        print('Sorting the input file in progress: {0:.1f}%'.format(i/nbr_of_traces_to_sort*100))
 
 toc = timeit.default_timer()
 print('The sort took {0:.0f} seconds'.format(toc-tic))
