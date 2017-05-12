@@ -1,8 +1,6 @@
 """
-Written by Antoine Paré in April 2017
-
+Written by Antoine Pare in April 2017
 This code takes a 3DVSP after first break picking and perform a statistical horizontal rotation
-
 """
 import sys
 import timeit
@@ -15,13 +13,16 @@ from obspy import read, Trace, Stream, UTCDateTime
 from obspy.core import AttribDict, Stats
 from obspy.io.segy.segy import SEGYTraceHeader, SEGYBinaryFileHeader, _read_segy
 
+import vspheaders
+
+vspheaders.set_VSP_headers()
 
 def getfbdata(stream, idx, window_min, window_max):
     """
     function that extracts data around the FB (First Break) of SEG-Y file (segy_reader) at trace idx, 
     from window_min samples before FB to window_max samples after FB
     """
-    fb = int(stream.traces[idx].header.water_depth_at_group/100)
+    fb = int(stream.traces[idx].header.first_break_time/100)
     return stream.traces[idx].data[(fb - int(window_min)) : (fb + (window_max) + 1)]
 
 
@@ -48,7 +49,7 @@ def savetracetostream(stream, idx, out, data):
     """
     np.require(data, dtype=np.float32)
     trace = Trace(data=data)
-    trace.stats.delta = 0.01
+    trace.stats.delta = 0.001
     trace.stats.starttime = UTCDateTime(2011,11,11,11,11,11)
     if not hasattr(trace.stats, 'segy.trace_header'): 
                 trace.stats.segy = {}        
@@ -59,7 +60,7 @@ def savetracetostream(stream, idx, out, data):
 
     
 
-inputfile = 'test.sgy'
+inputfile = 'Seismic.sgy'
 
 print('The SEG-Y files is loading ... Please be patient')
 tic = timeit.default_timer()
@@ -69,10 +70,10 @@ print('The loading took {0:.0f} seconds'.format(toc-tic))
 
 
 """ extract all source and receiver (geophone) coordinates """
-source_x = np.array([t.header.source_coordinate_x for t in stream.traces])[::3]
-source_y = np.array([t.header.source_coordinate_y for t in stream.traces])[::3]
-geo_x = np.array([t.header.group_coordinate_x for t in stream.traces])[::3]
-geo_y = np.array([t.header.group_coordinate_x for t in stream.traces])[::3]
+source_x = np.array([t.header.x_cord_source for t in stream.traces])[::3]
+source_y = np.array([t.header.y_cord_source for t in stream.traces])[::3]
+geo_x = np.array([t.header.x_cord_detect for t in stream.traces])[::3]
+geo_y = np.array([t.header.y_cord_detect for t in stream.traces])[::3]
 
 
 """ measures the source to receiver azimuth """
@@ -80,21 +81,20 @@ azimuth = np.round([(360 + math.degrees(math.atan2((source_x[t] - geo_x[t]), (so
 
 
 """ create a list of all the geophones' depth """
-geophone_depths = (np.array([t.header.datum_elevation_at_receiver_group for t in stream.traces])/100)[::3]                       
+geophone_depths = (np.array([t.header.vsp_measured_depth for t in stream.traces])/100)[::3]                       
 
 
 """ Calculate the number of tools, shot points and components in the 3D-VSP, then check that the calculated number of traces 
 is equal to the number of traces in the SEG-Y file """  
 nbr_of_geophone = np.count_nonzero(np.unique(geophone_depths))
-nbr_of_SP = np.count_nonzero(np.unique(np.array([t.header.energy_source_point_number for t in stream.traces])))
-nbr_of_components = np.count_nonzero(np.unique(np.array([t.header.trace_number_within_the_ensemble for t in stream.traces])))
+nbr_of_SP = np.count_nonzero(np.unique(np.array([t.header.shotpoint_number for t in stream.traces])))
+nbr_of_components = np.count_nonzero(np.unique(np.array([t.header.trace_number for t in stream.traces])))
 nbr_of_traces = nbr_of_geophone * nbr_of_SP * nbr_of_components
 
 if nbr_of_traces == int(str(stream).split()[0]):
     print('All Shot Points, Components and Geophones accounted for.')
 else:
     sys.exit('Some traces are missing, program stopped')
-
     
 """ set up empty arrays for the output horizontal angle of rotation and the tool face """
 horizontal_angles = np.array([])
@@ -155,19 +155,18 @@ print('The rotation took {0:.0f} seconds'.format(toc-tic))
 
 """ set up the necessary textual and binary file header for the output stream: out """
 out.stats = AttribDict()
-#out.stats = Stats(dict(textual_file_header=stream.textual_file_header))
 out.stats.textual_file_header = stream.textual_file_header
 out.stats.binary_file_header = stream.binary_file_header
 out.stats.binary_file_header.trace_sorting_code = stream.binary_file_header.trace_sorting_code
 
 """ save the rotation headers to the output stream: out """
 for i,j,m in zip(range(nbr_of_SP*nbr_of_geophone), angle_to_rotate, tool_face):
-    out.traces[i*3].stats.segy.trace_header.source_type_orientation = int(j)
-    out.traces[i*3+1].stats.segy.trace_header.source_type_orientation = int(j)
-    out.traces[i*3+2].stats.segy.trace_header.source_type_orientation = int(j)
-    out.traces[i*3].stats.segy.trace_header.source_energy_direction_mantissa = int(m)
-    out.traces[i*3+1].stats.segy.trace_header.source_energy_direction_mantissa = int(m)
-    out.traces[i*3+2].stats.segy.trace_header.source_energy_direction_mantissa = int(m) 
+    out.traces[i*3].stats.segy.trace_header.horizontal_rotation_angle = int(j)
+    out.traces[i*3+1].stats.segy.trace_header.horizontal_rotation_angle = int(j)
+    out.traces[i*3+2].stats.segy.trace_header.horizontal_rotation_angle = int(j)
+    out.traces[i*3].stats.segy.trace_header.tool_azimuth = int(m)
+    out.traces[i*3+1].stats.segy.trace_header.tool_azimuth = int(m)
+    out.traces[i*3+2].stats.segy.trace_header.tool_azimuth = int(m) 
 
 """ QC of input/output """
 print('The input SEG-Y had {} traces'.format(str(stream).split()[0]))
@@ -176,4 +175,4 @@ print('The output SEG-Y has {} traces'.format(out.count()))
 
 """ save 'out' as a SEG-Y file """
 print('Saving SEG-Y files...')
-out.write('Horizontal_Rotation.sgy', format='SEGY', data_encoding=1, byteorder='big', textual_header_encoding='EBCDIC')
+out.write('Horizontally_Rotated.sgy', format='SEGY', data_encoding=1, byteorder='big', textual_header_encoding='EBCDIC')
